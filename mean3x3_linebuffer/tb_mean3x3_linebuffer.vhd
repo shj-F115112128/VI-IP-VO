@@ -17,18 +17,27 @@ architecture sim of tb_mean3x3_linebuffer is
     signal pixel_out   : std_logic_vector(7 downto 0);
     signal out_x       : natural range 0 to 4;
     signal out_y       : natural range 0 to 65535;
+    signal sobel_mag   : std_logic_vector(7 downto 0);
+    signal sobel_edge  : std_logic;
     signal checked_windows : natural := 0;
+
+    -- With P(x,y) = 10*y + x, the horizontal slope is 1 and the vertical slope
+    -- is 10 everywhere, so every interior 3x3 window sees the same gradient:
+    -- Gx = 4*(1+1) = 8, Gy = 4*(10+10) = -80 (top row - bottom row), |Gx|+|Gy| = 88.
+    constant EXPECTED_SOBEL_MAG : natural := 88;
 begin
     dut : entity work.mean3x3_linebuffer
         generic map (
-            IMAGE_WIDTH => 5,
-            PIXEL_BITS  => 8
+            IMAGE_WIDTH    => 5,
+            PIXEL_BITS     => 8,
+            EDGE_THRESHOLD => 64
         )
         port map (
             clk => clk, rst => rst,
             pixel_valid => pixel_valid, pixel_in => pixel_in,
             out_valid => out_valid, pixel_out => pixel_out,
-            out_x => out_x, out_y => out_y
+            out_x => out_x, out_y => out_y,
+            sobel_mag => sobel_mag, sobel_edge => sobel_edge
         );
 
     clock_process : process
@@ -49,9 +58,19 @@ begin
             assert to_integer(unsigned(pixel_out)) = expected
                 report "FAIL: unexpected output pixel"
                 severity failure;
+
+            assert to_integer(unsigned(sobel_mag)) = EXPECTED_SOBEL_MAG
+                report "FAIL: unexpected sobel_mag"
+                severity failure;
+            assert sobel_edge = '1'
+                report "FAIL: sobel_edge should be asserted above EDGE_THRESHOLD"
+                severity failure;
+
             checked_windows <= checked_windows + 1;
             report "PASS: centre (" & integer'image(out_x) & "," & integer'image(out_y)
-                & "), average = " & integer'image(to_integer(unsigned(pixel_out)));
+                & "), average = " & integer'image(to_integer(unsigned(pixel_out)))
+                & ", sobel_mag = " & integer'image(to_integer(unsigned(sobel_mag)))
+                & ", sobel_edge = " & std_logic'image(sobel_edge);
         end if;
     end process;
 
